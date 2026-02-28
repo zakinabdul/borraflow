@@ -1,0 +1,4 @@
+## BorraFlow
+BorraFlow is an AI-powered web application that automates academic report formatting for students. Instead of spending hours styling content in Word or Google Docs, students paste their raw content into BorraFlow and the AI automatically detects the structure, applies the correct format, and generates a submission-ready PDF — in seconds.
+
+Built with LangGraph, LLaMA via Groq API, and LaTeX under the hood, BorraFlow features a split-screen interface where students can refine their document through a conversational chatbox, selecting any part of the live preview and instructing the AI to edit it — with full approval control before any change is applied.
