@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+
+@keyframes fade {
+    0% { opacity: 0; transform: translateY(-5px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+.animate-fade {
+  animation: fade 0.2s ease-out;
+}
+
+@layer utilities {
+  @keyframes titleGlow {
+    0%, 100% {
+      filter: drop-shadow(0 0 20px rgba(99, 102, 241, 0.3));
+    }
+    50% {
+      filter: drop-shadow(0 0 40px rgba(139, 92, 246, 0.5));
+    }
+  }
+
+  .animate-titleGlow {
+    animation: titleGlow 3s ease-in-out infinite;
+  }
+}
+
+
+@layer utilities {
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fadeInUp {
+    animation: fadeInUp 1s ease-out 0.5s forwards;
+  }
+}
