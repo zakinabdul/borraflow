@@ -1,0 +1,262 @@
+\documentclass[12pt,a4paper]{article}
+
+% ============================================================
+% PACKAGES
+% ============================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% ── TIMES NEW ROMAN FONT ───────────────────────────────────
+% 'mathptmx' loads Times Roman for body text AND math symbols.
+% This is the correct LaTeX equivalent of Times New Roman.
+% DO NOT add any other font package — it will override this.
+% [AGENT-RULE: font block is PROTECTED — do not modify or add fonts]
+% -----------------------------------------------------------
+\usepackage{mathptmx}
+
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{booktabs}
+\usepackage{setspace}
+\usepackage{fancyhdr}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{amsmath, amssymb}
+\usepackage{microtype}
+\usepackage{tocloft}
+\usepackage{enumitem}
+
+% ============================================================
+% PAGE LAYOUT
+% ============================================================
+\geometry{
+  a4paper,
+  top=2.5cm,
+  bottom=2.5cm,
+  left=2.5cm,
+  right=2.5cm
+}
+\onehalfspacing
+
+% ============================================================
+% HYPERREF — print safe, no colored boxes
+% ============================================================
+\hypersetup{
+  hidelinks,
+  pdftitle={{{TITLE}}},
+  pdfauthor={{{AUTHOR_NAMES}}}
+}
+
+% ============================================================
+% HEADER & FOOTER
+% ──────────────────────────────────────────────────────────
+% WHAT THIS DOES:
+%   Top-right   → page number  (auto, e.g. 2, 3, 4...)
+%   Bottom-left → dept label   (e.g. "Dept of Computer Science Engineering, ICET")
+%
+% HOW \thepage WORKS:
+%   LaTeX automatically tracks the current page number via \thepage.
+%   It increments on its own with every \newpage or page break.
+%   You never need to write page numbers manually anywhere in the doc.
+%
+% ──────────────────────────────────────────────────────────
+% [AGENT-RULE: this entire fancyhdr block is PROTECTED — do not modify]
+% [AGENT-RULE: \thepage is automatic — never hardcode page numbers]
+% [AGENT-RULE: footer text must appear on EVERY content page]
+% [AGENT-RULE: do not call \pagestyle{} anywhere else in the document]
+% [AGENT-RULE: do not call \thispagestyle{} except to suppress on special pages]
+% ============================================================
+\pagestyle{fancy}
+\fancyhf{}   % Clear all default header/footer fields
+
+% Page number — top right corner (matches reference PDF exactly)
+\fancyhead[R]{\small\thepage}
+
+% Department label — bottom left (matches reference PDF exactly)
+% Renders as: "Dept of Computer Science Engineering, ICET"
+\fancyfoot[L]{\small\textit{Dept of {{DEPARTMENT}}, {{COLLEGE_SHORT_NAME}}}}
+
+% No separator lines (reference uses a page border box, not rules)
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Give fancyhdr enough vertical space to render cleanly
+\setlength{\headheight}{15pt}
+\setlength{\footskip}{20pt}
+
+% ============================================================
+% SECTION HEADING STYLES
+% ──────────────────────────────────────────────────────────
+% \section{}      → BOLD, CENTERED, ALL CAPS
+%                   e.g. "ABSTRACT", "METHODOLOGY", "CONCLUSION"
+% \subsection{}   → Bold, left-aligned, numbered
+%                   e.g. "1. Selection of the Case Study"
+% \subsubsection{}→ Bold italic, left-aligned
+% ============================================================
+\titleformat{\section}
+  {\large\bfseries\centering}{}{0em}{\MakeUppercase}
+
+\titleformat{\subsection}
+  {\normalsize\bfseries}{\thesubsection.}{0.6em}{}
+
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\itshape}{\thesubsubsection.}{0.6em}{}
+
+\titlespacing{\section}{0pt}{18pt}{8pt}
+\titlespacing{\subsection}{0pt}{12pt}{4pt}
+\titlespacing{\subsubsection}{0pt}{10pt}{3pt}
+
+% ============================================================
+% TOC STYLING
+% ============================================================
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforesecskip}{4pt}
+\renewcommand{\cftsecfont}{\normalsize}
+\renewcommand{\cftsubsecfont}{\normalsize}
+
+% ============================================================
+% LIST STYLE — arrow bullet to match reference document
+% ============================================================
+\setlist[itemize]{
+  label=\(\triangleright\),
+  leftmargin=1.8em,
+  itemsep=2pt,
+  topsep=4pt
+}
+\setlist[enumerate]{
+  leftmargin=1.8em,
+  itemsep=2pt,
+  topsep=4pt
+}
+
+% ============================================================
+% CODE LISTING STYLE
+% ============================================================
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!60!black},
+  stringstyle=\color{orange},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  captionpos=b
+}
+
+% ============================================================
+% PARAGRAPH FORMATTING
+% First-line indent + justified text, matching the reference
+% ============================================================
+\setlength{\parindent}{1.5em}
+\setlength{\parskip}{4pt}
+
+% ============================================================
+% BEGIN DOCUMENT
+% ============================================================
+\begin{document}
+
+% ============================================================
+% ABSTRACT  (first content page)
+% ──────────────────────────────────────────────────────────
+% \setcounter{page}{2} → page number starts at 2, since page 1
+% is the cover page (handled separately / outside this template).
+% If there is no cover page, change {2} to {1}.
+%
+% [AGENT-RULE: do not remove \setcounter — it sets correct page numbering]
+% [AGENT-RULE: \section*{} means unnumbered heading; still add to TOC via \addcontentsline]
+% ============================================================
+\setcounter{page}{2}
+
+\section*{ABSTRACT}
+\addcontentsline{toc}{section}{Abstract}
+
+{{ABSTRACT}}
+
+\newpage
+
+% ============================================================
+% TABLE OF CONTENTS
+% ──────────────────────────────────────────────────────────
+% [AGENT-RULE: do NOT remove this block]
+% [AGENT-RULE: every \section{} and \subsection{} in {{CONTENT}} auto-appears here]
+% [AGENT-RULE: no need to manually list sections — LaTeX handles it]
+% ============================================================
+\begin{center}
+  {\large\bfseries TABLE OF CONTENTS}
+\end{center}
+\vspace{-0.8cm}
+\tableofcontents
+
+\newpage
+
+% ============================================================
+% MAIN CONTENT
+% ──────────────────────────────────────────────────────────
+% [AGENT-RULE: inject all report body sections here as structured LaTeX]
+% [AGENT-RULE: every top-level heading must use \section{Name}]
+% [AGENT-RULE: every sub-heading must use \subsection{Name}]
+% [AGENT-RULE: body paragraphs go directly under their section heading]
+% [AGENT-RULE: NEVER place raw paragraph text before the first \section{}]
+%
+% FIGURE USAGE:
+%   \begin{figure}[h]
+%     \centering
+%     \includegraphics[width=0.7\textwidth]{filename.png}
+%     \caption{Caption text}
+%     \label{fig:yourlabel}
+%   \end{figure}
+%
+% TYPICAL SECTION ORDER FOR ICET MICRO PROJECT:
+%   \section{Introduction}
+%   \section{Methodology}
+%   \section{Analysis}
+%   \section{Impacts}
+%   \section{Ethics and Professionalism}
+%   \section{Lessons Learned}
+%   \section{Recommendations}
+%   \section{Conclusion}
+% ============================================================
+
+{{CONTENT}}
+
+% ============================================================
+% REFERENCES
+% ──────────────────────────────────────────────────────────
+% [AGENT-RULE: use \bibitem{refN} for each reference entry]
+% [AGENT-RULE: in body text, cite using \cite{refN} → renders as [N]]
+% [AGENT-RULE: follow IEEE numbered citation format]
+%
+% FORMAT EXAMPLES:
+%
+%   Book:
+%   \bibitem{ref1}
+%   A. Author, \textit{Book Title}, Publisher, pp. 10--20, Year.
+%
+%   Journal article:
+%   \bibitem{ref2}
+%   B. Author, ``Article Title,'' \textit{Journal Name},
+%   vol. X, no. Y, pp. Z--Z, Month Year.
+%
+%   Website:
+%   \bibitem{ref3}
+%   C. Author, ``Page Title,'' Website, Date. [Online].
+%   Available: https://example.com. [Accessed: DD-Mon-YYYY].
+% ============================================================
+\newpage
+\section*{REFERENCE}
+\addcontentsline{toc}{section}{Reference}
+
+\begin{thebibliography}{99}
+\setlength{\itemsep}{3pt}
+
+{{REFERENCES}}
+
+\end{thebibliography}
+
+\end{document}

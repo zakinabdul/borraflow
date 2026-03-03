@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import api from "../api/axios"
+import api from "../api/axiosClient"
 import ToolBar from '../components/ToolBar'
 import ChatInterface from '../components/ChatInterface'
 import DocumentContent from '../components/DocumentContent'

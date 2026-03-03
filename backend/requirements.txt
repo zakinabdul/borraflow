@@ -1,5 +1,5 @@
 # FastAPI core
-fastapi
+fastapi[standard]
 uvicorn[standard]
 
 # Database - Neon (PostgreSQL via SQLAlchemy + asyncpg)
@@ -8,29 +8,14 @@ asyncpg
 
 # AI / Agent
 langgraph
-langchain
-groq
+langchain-core
+langchain-groq
+
+# Auth
+firebase-admin  # if you go with Firebase
 
 # Utilities
 python-dotenv
 pydantic
 pydantic-settings
 httpx
-
-supabase        # if you go with Supabase
-firebase-admin  # if you go with Firebase
-
-#old version draftflow used libraries
-fastapi[all]
-weasyprint==65.1
-bleach==6.2.0
-Deprecated==1.2.18
-langgraph 
-langchain-groq
-langchain
-pydantic
-python-dotenv
-sqlite-vec
-langsmith
-google-genai
-uvicorn

@@ -14,7 +14,7 @@ from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import InMemorySaver
-from app.db.style_db import StyleRetriever
+from app.ai.template_store import StyleRetriever
 import uuid
 
 # --- ENV SETUP ---
@@ -40,8 +40,8 @@ class ChunkState(TypedDict):
     """State for each individual chunk processed in parallel"""
     chunk: str        # The raw text chunk
     index: int        # Position in the original document
-
-class AgentState(TypedDict):
+from typing import TypedDict, Annotated, List
+class AgentState(TypedDict, total=False):
     """Main graph state"""
     user_request: str
     raw_text: str
@@ -204,104 +204,208 @@ def style_retrieval_node(state: AgentState):
         "selected_theme": json.dumps(theme_data)
     }
 
+import re
 
 # ============================================================
-# NODE 6: PANDOC CONVERSION (markdown + template → LaTeX)
+# NODE 6: MARKDOWN → LaTeX CONVERSION (no pandoc, no system deps)
 # runs ONCE, deterministic, no LLM
 # ============================================================
+def _convert_markdown_to_latex(markdown: str) -> str:
+    lines = markdown.split("\n")
+    latex_lines = []
+    in_itemize = False
+    in_enumerate = False
+    in_verbatim = False
+
+    for line in lines:
+        # --- Handle Code Blocks (Fenced) ---
+        if line.startswith("```"):
+            if in_verbatim:
+                latex_lines.append("\\end{verbatim}")
+                in_verbatim = False
+            else:
+                # Close lists before starting code
+                in_itemize, in_enumerate = _force_close_lists(latex_lines, in_itemize, in_enumerate)
+                latex_lines.append("\\begin{verbatim}")
+                in_verbatim = True
+            continue
+        
+        # If we are inside a code block, skip all other processing
+        if in_verbatim:
+            latex_lines.append(line)
+            continue
+
+        # --- Headings ---
+        if line.startswith("#"):
+            in_itemize, in_enumerate = _force_close_lists(latex_lines, in_itemize, in_enumerate)
+            if line.startswith("### "):
+                content = _inline_formatting(line[4:].strip())
+                latex_lines.append(f"\\subsubsection{{{content}}}")
+            elif line.startswith("## "):
+                content = _inline_formatting(line[3:].strip())
+                latex_lines.append(f"\\subsection{{{content}}}")
+            elif line.startswith("# "):
+                content = _inline_formatting(line[2:].strip())
+                latex_lines.append(f"\\section{{{content}}}")
+            continue
+
+        # --- Bullet list ---
+        elif re.match(r'^[-*] ', line):
+            if in_enumerate:
+                latex_lines.append("\\end{enumerate}")
+                in_enumerate = False
+            if not in_itemize:
+                latex_lines.append("\\begin{itemize}")
+                in_itemize = True
+            content = _inline_formatting(line[2:].strip())
+            latex_lines.append(f"  \\item {content}")
+            continue
+
+        # --- Numbered list ---
+        elif re.match(r'^\d+\. ', line):
+            if in_itemize:
+                latex_lines.append("\\end{itemize}")
+                in_itemize = False
+            if not in_enumerate:
+                latex_lines.append("\\begin{enumerate}")
+                in_enumerate = True
+            content = re.sub(r'^\d+\. ', '', line).strip()
+            content = _inline_formatting(content)
+            latex_lines.append(f"  \\item {content}")
+            continue
+
+        # --- Blank line or Normal Paragraph ---
+        else:
+            stripped = line.strip()
+            # If we hit a non-list line, close active lists
+            if not stripped or (in_itemize or in_enumerate):
+                in_itemize, in_enumerate = _force_close_lists(latex_lines, in_itemize, in_enumerate)
+            
+            if stripped:
+                latex_lines.append(_inline_formatting(line))
+            else:
+                latex_lines.append("")
+
+    # Final cleanup
+    _force_close_lists(latex_lines, in_itemize, in_enumerate)
+    if in_verbatim:
+        latex_lines.append("\\end{verbatim}")
+
+    return "\n".join(latex_lines)
+
+def _force_close_lists(latex_lines, in_itemize, in_enumerate):
+    """Helper to close lists and return their new status."""
+    if in_itemize:
+        latex_lines.append("\\end{itemize}")
+    if in_enumerate:
+        latex_lines.append("\\end{enumerate}")
+    return False, False # Both are now closed
+
+def _inline_formatting(text: str) -> str:
+    """Apply inline markdown → LaTeX formatting."""
+    # Bold+italic (must come before bold and italic)
+    text = re.sub(r'\*\*\*(.+?)\*\*\*', r'\\textbf{\\textit{\1}}', text)
+    # Bold
+    text = re.sub(r'\*\*(.+?)\*\*', r'\\textbf{\1}', text)
+    # Italic
+    text = re.sub(r'\*(.+?)\*', r'\\textit{\1}', text)
+    # Inline code
+    text = re.sub(r'`(.+?)`', r'\\texttt{\1}', text)
+    # Block math
+    text = re.sub(r'\$\$(.+?)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
+    # Inline math
+    text = re.sub(r'\$(.+?)\$', r'$\1$', text)
+    # Escape bare % and & (common in academic content)
+    text = re.sub(r'(?<!\\)%', r'\\%', text)
+    text = re.sub(r'(?<!\\)&', r'\\&', text)
+    return text
+
+
+def _close_lists(latex_lines: list, in_itemize: bool, in_enumerate: bool):
+    if in_itemize:
+        latex_lines.append("\\end{itemize}")
+    if in_enumerate:
+        latex_lines.append("\\end{enumerate}")
+
+
+import json
+import json
+from pathlib import Path
+# Recommendation: Move this import to the top of your file
+# Adjust the path based on your specific 'sys.path'
+try:
+    from app.utils.helpers import sanitize_tex
+except ImportError:
+    # Fallback if the above path fails in your specific Docker/Local setup
+    from utils.helpers import sanitize_tex
 
 def pandoc_node(state: AgentState):
-    markdown_content = state["markdown_content"]
-    theme = json.loads(state["selected_theme"])
-    
-    engine = theme.get("export_engine", "xelatex")
-    template_path = theme.get("tex_template_path", "default.tex")
-    style_name = theme.get("name", "Academic Standard")
-    
-    print(f"[Pandoc] Converting to LaTeX | Style: {style_name} | Engine: {engine}")
-    
-    # Write markdown to a temp file
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as md_file:
-        md_file.write(markdown_content)
-        md_path = md_file.name
-    
-    output_tex_path = md_path.replace(".md", ".tex")
-    
+    markdown_content = state.get("markdown_content", "")
+    # Ensure selected_theme is parsed correctly
     try:
-        # Build pandoc command
-        # Check if the .tex template actually exists, else use default pandoc latex
-        templates_dir = project_root / "templates"
-        full_template_path = templates_dir / template_path
-        
-        cmd = ["pandoc", md_path, "-o", output_tex_path, "--standalone"]
-        
-        if full_template_path.exists():
-            cmd += [f"--template={full_template_path}"]
-            print(f"[Pandoc] Using template: {full_template_path}")
-        else:
-            # Fallback: pandoc's built-in latex with basic vars
-            cmd += [
-                "-V", f"documentclass=article",
-                "-V", "fontsize=12pt",
-                "-V", "geometry=margin=1in",
-            ]
-            print(f"[Pandoc] Template not found, using pandoc default latex.")
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        
-        if result.returncode != 0:
-            print(f"[Pandoc] Error: {result.stderr}")
-            # Fallback: return raw markdown wrapped in minimal LaTeX
-            latex_content = _minimal_latex_fallback(markdown_content, style_name)
-        else:
-            with open(output_tex_path, "r") as f:
-                latex_content = f.read()
-            print(f"[Pandoc] Conversion successful.")
-    
-    except FileNotFoundError:
-        # Pandoc not installed
-        print("[Pandoc] Pandoc not found on system. Using minimal LaTeX fallback.")
-        latex_content = _minimal_latex_fallback(markdown_content, style_name)
-    
-    finally:
-        # Cleanup temp files
-        if os.path.exists(md_path):
-            os.remove(md_path)
-        if os.path.exists(output_tex_path):
-            os.remove(output_tex_path)
-    
-    return {
-        "document_content": latex_content
-    }
+        theme = json.loads(state.get("selected_theme", "{}"))
+    except (json.JSONDecodeError, TypeError):
+        theme = {}
 
+    # 1. Extract metadata with sanitization
+    # If state keys are missing, these defaults prevent LaTeX "Undefined Control Sequence" errors
+    report_title = sanitize_tex(state.get("report_title", "Project Report"))
+    author_name = sanitize_tex(state.get("author_name", "Student Name"))
+    dept_name = sanitize_tex(state.get("department", "Engineering"))
+    college_name = sanitize_tex(state.get("college_short_name", "ICET"))
 
-def _minimal_latex_fallback(markdown: str, style_name: str) -> str:
-    """
-    If Pandoc is not installed or fails, 
-    wrap markdown in a minimal compilable LaTeX document.
-    """
-    # Basic markdown → LaTeX conversions
-    latex_body = markdown
-    latex_body = re.sub(r'^# (.+)$', r'\\section{\1}', latex_body, flags=re.MULTILINE)
-    latex_body = re.sub(r'^## (.+)$', r'\\subsection{\1}', latex_body, flags=re.MULTILINE)
-    latex_body = re.sub(r'^### (.+)$', r'\\subsubsection{\1}', latex_body, flags=re.MULTILINE)
-    latex_body = re.sub(r'\*\*(.+?)\*\*', r'\\textbf{\1}', latex_body)
-    latex_body = re.sub(r'\*(.+?)\*', r'\\textit{\1}', latex_body)
-    latex_body = re.sub(r'^\- (.+)$', r'\\item \1', latex_body, flags=re.MULTILINE)
-    latex_body = re.sub(r'\$\$(.+?)\$\$', r'\\[\1\\]', latex_body, flags=re.DOTALL)
+    style_name = theme.get("name", "Academic Standard")
+    template_name = theme.get("tex_template_path", "college_report_v1.tex")
 
+    print(f"[LaTeX Converter] Converting | Style: {style_name}")
+
+    # 2. Convert the main body using your lightweight converter
+    body_latex = _convert_markdown_to_latex(markdown_content)
+
+    # project_root should be defined globally or passed in
+    templates_dir = Path("templates") 
+    full_template_path = templates_dir / template_name
+
+    if full_template_path.exists():
+        template_text = full_template_path.read_text()
+        
+        # 3. Create the replacement map
+        # Note: We prioritize {{CONTENT}}. If the LLM generates the Abstract 
+        # inside the content, we keep {{ABSTRACT}} empty.
+        replacements = {
+            "{{TITLE}}": report_title,
+            "{{AUTHOR_NAMES}}": author_name,
+            "{{DEPARTMENT}}": dept_name,
+            "{{COLLEGE_SHORT_NAME}}": college_name,
+            "{{CONTENT}}": body_latex,
+            "{{ABSTRACT}}": "",  
+            "{{REFERENCES}}": ""
+        }
+
+        latex_content = template_text
+        for placeholder, value in replacements.items():
+            latex_content = latex_content.replace(placeholder, str(value))
+            
+        print(f"[LaTeX Converter] Injected into template: {full_template_path}")
+    else:
+        print(f"[LaTeX Converter] Template not found at {full_template_path}. Using fallback.")
+        latex_content = _wrap_in_document(body_latex, style_name)
+
+    return {"document_content": latex_content}
+
+def _wrap_in_document(body: str, style_name: str) -> str:
     return f"""\\documentclass[12pt]{{article}}
 \\usepackage{{amsmath}}
 \\usepackage{{geometry}}
 \\geometry{{margin=1in}}
 \\usepackage{{times}}
-\\title{{{style_name} Document}}
+\\usepackage{{enumitem}}
+\\title{{{style_name}}}
 \\begin{{document}}
 \\maketitle
-{latex_body}
+{body}
 \\end{{document}}
 """
-
 
 # ============================================================
 # GRAPH WIRING
@@ -340,20 +444,24 @@ app = builder.compile(checkpointer=memory)
 
 @traceable
 async def format_graph(raw_text: str, user_query: str):
-    initial_inputs = {
+    initial_inputs: AgentState = {
         "raw_text": raw_text,
         "user_request": user_query,
         "messages": [],
         "markdown_chunks": [],  # Must initialize for the Annotated reducer
     }
 
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    from langchain_core.runnables import RunnableConfig
+    config: RunnableConfig = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
     print("🚀 Starting the Agent...")
     final_state = await app.ainvoke(initial_inputs, config=config)
     
     return {
+        "latex_content": final_state["document_content"]  # Final LaTeX string
+    }
+    """return {
         "markdown_content": final_state["markdown_content"],
         "selected_theme": final_state["selected_theme"],
         "latex_content": final_state["document_content"]  # Final LaTeX string
-    }
+    }"""
