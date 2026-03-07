@@ -30,12 +30,12 @@ function EditorPage() {
     const documentation = "report";
 
     try {
-      const response = await api.post("/v2/agent/format_agent", {
+      const response = await api.post("/agent/format_agent", {
         raw_text: message,
         user_request: documentation,
       });
-      console.log(response);
-      const reply = response.data.code;
+      console.log("Full Response:", response.data);
+      const reply = response.data.latex_content;
       console.log(reply);
 
       const assistantMessage = {
