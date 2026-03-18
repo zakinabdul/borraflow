@@ -57,3 +57,5 @@ dist/
 .DS_Store
 Thumbs.db
 docs/
+# CI
+.ruff_cache/
