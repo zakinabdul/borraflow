@@ -2,18 +2,29 @@
 
 
 @keyframes fade {
-    0% { opacity: 0; transform: translateY(-5px); }
-    100% { opacity: 1; transform: translateY(0); }
+  0% {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
 .animate-fade {
   animation: fade 0.2s ease-out;
 }
 
 @layer utilities {
   @keyframes titleGlow {
-    0%, 100% {
+
+    0%,
+    100% {
       filter: drop-shadow(0 0 20px rgba(99, 102, 241, 0.3));
     }
+
     50% {
       filter: drop-shadow(0 0 40px rgba(139, 92, 246, 0.5));
     }
@@ -31,6 +42,7 @@
       opacity: 0;
       transform: translateY(30px);
     }
+
     to {
       opacity: 1;
       transform: translateY(0);
@@ -40,4 +52,283 @@
   .animate-fadeInUp {
     animation: fadeInUp 1s ease-out 0.5s forwards;
   }
+}
+
+/* ── TipTap editor base resets ───────────────────────────────────────────── */
+.ProseMirror {
+  outline: none;
+  caret-color: #3b3b8f;
+}
+
+.ProseMirror ::selection {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+/* ── Math NodeView ───────────────────────────────────────────────────────── */
+.math-inline-node {
+  display: inline-block;
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+  border-radius: 3px;
+  padding: 0 2px;
+  transition: background 0.15s;
+}
+
+.math-inline-node.ProseMirror-selectednode,
+.math-inline-node:hover {
+  background: rgba(99, 102, 241, 0.1);
+  outline: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.math-block-node {
+  display: block;
+  text-align: center;
+  cursor: default;
+  user-select: none;
+  padding: 0.4em 0;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.math-block-node.ProseMirror-selectednode,
+.math-block-node:hover {
+  background: rgba(99, 102, 241, 0.06);
+  outline: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+/* Toolbar ribbon hover / active help */
+.tiptap-toolbar-btn-active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+}
+
+/* ── LaTeX Academic Document Typography ───────────────────────────────────── */
+
+/* Base: Computer Modern serif, justified, LaTeX-accurate sizing */
+.tiptap {
+  font-family: 'Computer Modern Serif', 'CMU Serif', 'Latin Modern', Georgia, 'Times New Roman', serif;
+  font-size: 11.5pt;
+  line-height: 1.6;
+  color: #000;
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+
+  /* Section & subsection counters – mirrors LaTeX report class (chapter 0) */
+  counter-reset: tiptap-section 0 tiptap-subsection 0 tiptap-subsubsection 0;
+}
+
+/* ── Title block (from \maketitle) ───────────────────────────────────────── */
+.tiptap h1 {
+  font-size: 17pt;
+  font-weight: bold;
+  text-align: center;
+  margin: 0 0 0.3em;
+  line-height: 1.3;
+  color: #000;
+}
+
+/* ── \section → h2 ──────────────────────────────────────────────────────── */
+.tiptap h2 {
+  font-size: 12pt;
+  font-weight: bold;
+  color: #000;
+  margin: 1.6em 0 0.5em;
+  border: none;
+  padding: 0;
+  text-align: left;
+  counter-increment: tiptap-section;
+  counter-reset: tiptap-subsection 0 tiptap-subsubsection 0;
+}
+
+.tiptap h2::before {
+  content: "0." counter(tiptap-section) "\00a0\00a0\00a0\00a0";
+}
+
+/* ── \subsection → h3 ───────────────────────────────────────────────────── */
+.tiptap h3 {
+  font-size: 11.5pt;
+  font-weight: bold;
+  color: #000;
+  margin: 1.2em 0 0.4em;
+  text-align: left;
+  counter-increment: tiptap-subsection;
+  counter-reset: tiptap-subsubsection 0;
+}
+
+.tiptap h3::before {
+  content: "0." counter(tiptap-section) "." counter(tiptap-subsection) "\00a0\00a0\00a0\00a0";
+}
+
+/* ── \subsubsection → h4 ─────────────────────────────────────────────────── */
+.tiptap h4 {
+  font-size: 11pt;
+  font-weight: bold;
+  font-style: italic;
+  color: #000;
+  margin: 1em 0 0.3em;
+  text-align: left;
+  counter-increment: tiptap-subsubsection;
+}
+
+.tiptap h4::before {
+  content: "0." counter(tiptap-section) "." counter(tiptap-subsection) "." counter(tiptap-subsubsection) "\00a0\00a0\00a0";
+}
+
+/* ── Paragraphs ──────────────────────────────────────────────────────────── */
+.tiptap p {
+  margin: 0;
+  /* LaTeX-style: paragraphs with first-line indent, no gap */
+  text-indent: 1.5em;
+}
+
+/* First para after a heading: no indent */
+.tiptap h2+p,
+.tiptap h3+p,
+.tiptap h4+p,
+.tiptap blockquote+p,
+.tiptap ul+p,
+.tiptap ol+p,
+.tiptap pre+p,
+.tiptap table+p {
+  text-indent: 0;
+}
+
+/* Paragraph spacing (blank line between paragraphs looks like LaTeX) */
+.tiptap p+p {
+  margin-top: 0.6em;
+}
+
+/* ── Lists ───────────────────────────────────────────────────────────────── */
+.tiptap ul,
+.tiptap ol {
+  padding-left: 2em;
+  margin: 0.5em 0;
+  text-indent: 0;
+}
+
+.tiptap ul {
+  list-style-type: disc;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+}
+
+.tiptap li {
+  margin: 0.2em 0;
+  text-indent: 0;
+}
+
+/* ── Inline formatting ───────────────────────────────────────────────────── */
+.tiptap strong {
+  font-weight: bold;
+}
+
+.tiptap em {
+  font-style: italic;
+}
+
+.tiptap u {
+  text-decoration: underline;
+}
+
+/* ── Code & verbatim ─────────────────────────────────────────────────────── */
+.tiptap code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9em;
+  background: #f5f5f5;
+  border-radius: 3px;
+  padding: 0.05em 0.3em;
+}
+
+.tiptap pre {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.88em;
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.8em 1.1em;
+  margin: 0.8em 0;
+  overflow-x: auto;
+  white-space: pre;
+  text-indent: 0;
+  text-align: left;
+}
+
+.tiptap pre code {
+  background: none;
+  padding: 0;
+}
+
+/* ── Abstract blockquote ─────────────────────────────────────────────────── */
+.tiptap blockquote {
+  margin: 0.6em 2em;
+  padding: 0;
+  border: none;
+  font-size: 10.5pt;
+  color: #111;
+  font-style: normal;
+  text-align: justify;
+}
+
+.tiptap blockquote strong {
+  display: block;
+  text-align: center;
+  margin-bottom: 0.4em;
+}
+
+/* ── Horizontal rule ─────────────────────────────────────────────────────── */
+.tiptap hr {
+  border: none;
+  border-top: 0.5px solid #bbb;
+  margin: 1.2em 0;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.tiptap table {
+  border-collapse: collapse;
+  margin: 1em auto;
+  font-size: 10.5pt;
+  text-align: left;
+}
+
+.tiptap table td,
+.tiptap table th {
+  border: 0.5pt solid #888;
+  padding: 3px 10px;
+}
+
+.tiptap table th {
+  font-weight: bold;
+  background: #f4f4f4;
+}
+
+/* ── KaTeX math ──────────────────────────────────────────────────────────── */
+.tiptap .math-block {
+  text-align: center;
+  overflow-x: auto;
+  margin: 0.9em 0;
+  padding: 0.3em 0;
+  text-indent: 0;
+}
+
+.tiptap .katex {
+  font-size: 1.05em;
+}
+
+.tiptap .latex-error {
+  color: #cc0000;
+  background: #fff0f0;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-family: monospace;
+  font-size: 0.85em;
+}
+
+/* ── Hyperlinks ──────────────────────────────────────────────────────────── */
+.tiptap a {
+  color: #000080;
+  text-decoration: underline;
 }

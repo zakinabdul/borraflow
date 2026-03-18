@@ -4,6 +4,7 @@ import api from "../api/axiosClient"
 import ToolBar from '../components/ToolBar'
 import ChatInterface from '../components/ChatInterface'
 import DocumentContent from '../components/DocumentContent'
+import { EditorProvider } from '../context/EditorContext'
 
 function EditorPage() {
 
@@ -23,9 +24,9 @@ function EditorPage() {
       role: "user",
       content: message,
     };
-    setMessages((prev) =>  [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     console.log(userMessage)
-    
+
 
     const documentation = "report";
 
@@ -45,7 +46,7 @@ function EditorPage() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
       console.log(assistantMessage)
-      
+
 
       setAnswer(reply);
 
@@ -75,27 +76,25 @@ function EditorPage() {
 
   return (
     <>
-        <div className='flex h-full bg-gray-100 min-w-full'>
-            <ChatInterface 
-              messages={messages}
+      <div className='flex h-full bg-gray-100 min-w-full'>
+        <ChatInterface
+          messages={messages}
+          loading={loading}
+          onSend={sendMessage}
+        />
+
+        <div className="w-px border-r border-gray-800/90"></div>
+
+        <div className='flex-1 overflow-hidden flex flex-col'>
+          <EditorProvider>
+            <ToolBar />
+            <DocumentContent
+              answer={answer}
               loading={loading}
-              onSend={sendMessage}
             />
-
-            <div className="w-px border-r border-gray-800/90"></div>
-
-            <div className='flex-1 bg-white overflow-y-auto'>
-    
-                <ToolBar />
-
-                <DocumentContent 
-                  answer={answer}
-                  loading={loading}
-                />
-
-                
-            </div>
+          </EditorProvider>
         </div>
+      </div>
     </>
   )
 }
