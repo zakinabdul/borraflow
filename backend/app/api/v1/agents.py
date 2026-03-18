@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Request, status, Depends
 from fastapi.responses import JSONResponse
 from groq import RateLimitError
 import re
 from app.schemas.agent import *
 from app.ai.format_agent import format_graph
+from app.core.security import get_current_user
 
 router = APIRouter(
     prefix="/agent",
-    tags=["agent"]
+    tags=["agent"],
+    dependencies=[Depends(get_current_user)]
 )
 
 # --- STANDALONE HANDLER FUNCTION (No Decorator) ---

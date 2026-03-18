@@ -1,5 +1,5 @@
 """Application configuration"""
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -8,33 +8,22 @@ class Settings(BaseSettings):
     debug: bool = False
     database_url: str = "sqlite:///./test.db"
     google_api_key: str
-    groq_api_key:str
+    groq_api_key: str
+    firebase_project_id: str
+    firebase_private_key_id: str
+    firebase_private_key: str
+    firebase_client_email: str
+    firebase_client_id: str
+    firebase_auth_uri: str = "https://accounts.google.com/o/oauth2/auth"
+    firebase_token_uri: str = "https://oauth2.googleapis.com/token"
+    firebase_auth_provider_x509_cert_url: str = "https://www.googleapis.com/oauth2/v1/certs"
+    firebase_client_x509_cert_url: str
     
-    class Config:
-        env_file = ".env"
-
-
-settings = Settings()
-
-""" previous setup(after docker run, setup it)
-from pydantic_settings import BaseSettings, SettingsConfigDict
-import os
-
-class Settings(BaseSettings):
-    # Required fields
-    APP_NAME: str
-    API_V1_STR: str
-    DATABASE_URL: str
-    GROQ_API: str
-    # Fields with defaults
-    DEBUG: bool = False 
-
     model_config = SettingsConfigDict(
-        # 1. Where to look for the file locally
-        env_file=[".env", "envs/.env.prod", "envs/.env"],
+        env_file=".env",
         env_file_encoding='utf-8',
         extra='ignore'
     )
 
+
 settings = Settings()
-"""

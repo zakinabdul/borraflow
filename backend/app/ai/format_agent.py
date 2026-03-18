@@ -20,7 +20,7 @@ import uuid
 # --- ENV SETUP ---
 current_file_path = Path(__file__).resolve()
 project_root = current_file_path.parent.parent.parent
-env_path = project_root / "envs" / ".env"
+env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path)
 
 print(f"Loading env from: {env_path}")
