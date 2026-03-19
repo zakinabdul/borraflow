@@ -16,7 +16,8 @@ from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import InMemorySaver
 from app.ai.template_store import StyleRetriever
 import uuid
-
+# After — add LaTeXCleaner to the same import
+from app.utils.helpers import sanitize_tex, LaTeXCleaner
 # --- ENV SETUP ---
 current_file_path = Path(__file__).resolve()
 project_root = current_file_path.parent.parent.parent
@@ -51,6 +52,8 @@ class AgentState(TypedDict, total=False):
     selected_theme: str                      # After style retrieval (JSON string)
     document_content: str                    # Final LaTeX output
     messages: Annotated[list, add_messages]
+    abstract_content:   str   # abstract paragraph text in markdown
+    references_content: str 
 
 
 # ============================================================
@@ -133,6 +136,16 @@ def chunk_router(state: AgentState):
     ]
 
 
+import re
+import json
+from pathlib import Path
+
+try:
+    from app.utils.helpers import sanitize_tex
+except ImportError:
+    from utils.helpers import sanitize_tex
+
+
 # ============================================================
 # NODE 3: MARKDOWN FORMAT (runs in parallel per chunk)
 # ============================================================
@@ -141,14 +154,13 @@ def chunk_router(state: AgentState):
 async def markdown_format_node(state: ChunkState):
     chunk = state["chunk"]
     index = state["index"]
-    
+
     print(f"[Markdown Node] Processing chunk {index + 1}...")
-    
+
     response = await markdown_generate.ainvoke({"chunk": chunk})
-    
+
     print(f"[Markdown Node] Chunk {index + 1} done.")
-    
-    # Return as list with index so reducer can sort later
+
     return {
         "markdown_chunks": [{"index": index, "content": response.content}]
     }
@@ -160,18 +172,13 @@ async def markdown_format_node(state: ChunkState):
 
 def reducer_node(state: AgentState):
     chunks = state["markdown_chunks"]
-    
-    # Sort by original index to maintain document order
+
     sorted_chunks = sorted(chunks, key=lambda x: x["index"])
-    
-    # Join with double newline for clean markdown separation
     full_markdown = "\n\n".join(c["content"] for c in sorted_chunks)
-    
+
     print(f"[Reducer] Stitched {len(sorted_chunks)} chunks into full markdown.")
-    
-    return {
-        "markdown_content": full_markdown
-    }
+
+    return {"markdown_content": full_markdown}
 
 
 # ============================================================
@@ -182,9 +189,9 @@ def reducer_node(state: AgentState):
 def style_retrieval_node(state: AgentState):
     retriever = StyleRetriever()
     user_query = state["user_request"]
-    
+
     theme_data = retriever.search_style(user_query)
-    
+
     if theme_data:
         name = theme_data.get("name")
         distance = theme_data.get("distance")
@@ -200,57 +207,117 @@ def style_retrieval_node(state: AgentState):
             "distance": 0.0
         }
 
-    return {
-        "selected_theme": json.dumps(theme_data)
-    }
+    return {"selected_theme": json.dumps(theme_data)}
 
-import re
 
 # ============================================================
-# NODE 6: MARKDOWN → LaTeX CONVERSION (no pandoc, no system deps)
-# runs ONCE, deterministic, no LLM
+# HELPERS: Markdown → LaTeX conversion (no pandoc, no system deps)
 # ============================================================
+
+def _force_close_lists(latex_lines: list, in_itemize: bool, in_enumerate: bool):
+    """Close any open list environments and return updated flags."""
+    if in_itemize:
+        latex_lines.append("\\end{itemize}")
+    if in_enumerate:
+        latex_lines.append("\\end{enumerate}")
+    return False, False
+
+
+def _inline_formatting(text: str) -> str:
+    """
+    Convert inline markdown syntax to LaTeX equivalents.
+    Order matters: bold+italic before bold before italic.
+    % and & escaping only fires on bare characters not already escaped.
+    """
+    # Bold + italic (must come before bold and italic individually)
+    text = re.sub(r'\*\*\*(.+?)\*\*\*', r'\\textbf{\\textit{\1}}', text)
+    # Bold
+    text = re.sub(r'\*\*(.+?)\*\*', r'\\textbf{\1}', text)
+    # Italic
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\\textit{\1}', text)
+    # Inline code
+    text = re.sub(r'`(.+?)`', r'\\texttt{\1}', text)
+    # Block math (must come before inline math)
+    text = re.sub(r'\$\$(.+?)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
+    # Inline math — leave as-is, LaTeX handles $...$
+    # Escape bare % — but NOT if already preceded by backslash
+    text = re.sub(r'(?<!\\)%', r'\\%', text)
+    # Escape bare & — but NOT if already preceded by backslash
+    text = re.sub(r'(?<!\\)&', r'\\&', text)
+    return text
+
+
 def _convert_markdown_to_latex(markdown: str) -> str:
+    """
+    Convert a full markdown string to LaTeX body content.
+
+    Heading mapping (matches template structure):
+        #   → \\section{}       — top-level report section
+        ##  → \\subsection{}    — sub-section (A, B, C level)
+        ### → \\subsubsection{} — third level (rare)
+
+    Lists: - or * → itemize, 1. 2. → enumerate
+    Code blocks: ```...``` → lstlisting (uses template's \\lstset config)
+    Blank lines become paragraph breaks.
+    """
     lines = markdown.split("\n")
     latex_lines = []
     in_itemize = False
     in_enumerate = False
-    in_verbatim = False
+    in_code_block = False
 
     for line in lines:
-        # --- Handle Code Blocks (Fenced) ---
+
+        # ── Code block toggle ─────────────────────────────────────
         if line.startswith("```"):
-            if in_verbatim:
-                latex_lines.append("\\end{verbatim}")
-                in_verbatim = False
+            if in_code_block:
+                # FIX #6: Use lstlisting instead of verbatim to
+                # pick up the \lstset syntax highlighting config
+                latex_lines.append("\\end{lstlisting}")
+                in_code_block = False
             else:
-                # Close lists before starting code
-                in_itemize, in_enumerate = _force_close_lists(latex_lines, in_itemize, in_enumerate)
-                latex_lines.append("\\begin{verbatim}")
-                in_verbatim = True
+                in_itemize, in_enumerate = _force_close_lists(
+                    latex_lines, in_itemize, in_enumerate
+                )
+                latex_lines.append("\\begin{lstlisting}")
+                in_code_block = True
             continue
-        
-        # If we are inside a code block, skip all other processing
-        if in_verbatim:
+
+        # Inside code block — emit raw, no formatting
+        if in_code_block:
             latex_lines.append(line)
             continue
 
-        # --- Headings ---
-        if line.startswith("#"):
-            in_itemize, in_enumerate = _force_close_lists(latex_lines, in_itemize, in_enumerate)
-            if line.startswith("### "):
-                content = _inline_formatting(line[4:].strip())
-                latex_lines.append(f"\\subsubsection{{{content}}}")
-            elif line.startswith("## "):
-                content = _inline_formatting(line[3:].strip())
-                latex_lines.append(f"\\subsection{{{content}}}")
-            elif line.startswith("# "):
-                content = _inline_formatting(line[2:].strip())
-                latex_lines.append(f"\\section{{{content}}}")
+        # ── Headings ──────────────────────────────────────────────
+        # FIX #5: Academic reports use # for sections (Introduction,
+        # Methodology etc.) and ## for sub-sections (A. Overview etc.)
+        # This matches how the markdown output from the LLM is structured.
+        if line.startswith("### "):
+            in_itemize, in_enumerate = _force_close_lists(
+                latex_lines, in_itemize, in_enumerate
+            )
+            content = _inline_formatting(line[4:].strip())
+            latex_lines.append(f"\\subsubsection{{{content}}}")
             continue
 
-        # --- Bullet list ---
-        elif re.match(r'^[-*] ', line):
+        if line.startswith("## "):
+            in_itemize, in_enumerate = _force_close_lists(
+                latex_lines, in_itemize, in_enumerate
+            )
+            content = _inline_formatting(line[3:].strip())
+            latex_lines.append(f"\\subsection{{{content}}}")
+            continue
+
+        if line.startswith("# "):
+            in_itemize, in_enumerate = _force_close_lists(
+                latex_lines, in_itemize, in_enumerate
+            )
+            content = _inline_formatting(line[2:].strip())
+            latex_lines.append(f"\\section{{{content}}}")
+            continue
+
+        # ── Bullet list ───────────────────────────────────────────
+        if re.match(r'^[-*] ', line):
             if in_enumerate:
                 latex_lines.append("\\end{enumerate}")
                 in_enumerate = False
@@ -261,8 +328,8 @@ def _convert_markdown_to_latex(markdown: str) -> str:
             latex_lines.append(f"  \\item {content}")
             continue
 
-        # --- Numbered list ---
-        elif re.match(r'^\d+\. ', line):
+        # ── Numbered list ─────────────────────────────────────────
+        if re.match(r'^\d+\. ', line):
             if in_itemize:
                 latex_lines.append("\\end{itemize}")
                 in_itemize = False
@@ -274,139 +341,185 @@ def _convert_markdown_to_latex(markdown: str) -> str:
             latex_lines.append(f"  \\item {content}")
             continue
 
-        # --- Blank line or Normal Paragraph ---
-        else:
-            stripped = line.strip()
-            # If we hit a non-list line, close active lists
-            if not stripped or (in_itemize or in_enumerate):
-                in_itemize, in_enumerate = _force_close_lists(latex_lines, in_itemize, in_enumerate)
-            
-            if stripped:
-                latex_lines.append(_inline_formatting(line))
-            else:
-                latex_lines.append("")
+        # ── Blank line / paragraph text ───────────────────────────
+        stripped = line.strip()
 
-    # Final cleanup
+        if stripped:
+            # FIX #8: Only close lists when we hit actual paragraph text,
+            # not on every blank line. Blank lines are paragraph separators
+            # in LaTeX and should not trigger list closure.
+            if in_itemize or in_enumerate:
+                in_itemize, in_enumerate = _force_close_lists(
+                    latex_lines, in_itemize, in_enumerate
+                )
+            latex_lines.append(_inline_formatting(line))
+        else:
+            # Blank line — emit as LaTeX paragraph separator, don't close lists
+            latex_lines.append("")
+
+    # Final safety: close any still-open environments
     _force_close_lists(latex_lines, in_itemize, in_enumerate)
-    if in_verbatim:
-        latex_lines.append("\\end{verbatim}")
+    if in_code_block:
+        latex_lines.append("\\end{lstlisting}")
 
     return "\n".join(latex_lines)
 
-def _force_close_lists(latex_lines, in_itemize, in_enumerate):
-    """Helper to close lists and return their new status."""
-    if in_itemize:
-        latex_lines.append("\\end{itemize}")
-    if in_enumerate:
-        latex_lines.append("\\end{enumerate}")
-    return False, False # Both are now closed
 
-def _inline_formatting(text: str) -> str:
-    """Apply inline markdown → LaTeX formatting."""
-    # Bold+italic (must come before bold and italic)
-    text = re.sub(r'\*\*\*(.+?)\*\*\*', r'\\textbf{\\textit{\1}}', text)
-    # Bold
-    text = re.sub(r'\*\*(.+?)\*\*', r'\\textbf{\1}', text)
-    # Italic
-    text = re.sub(r'\*(.+?)\*', r'\\textit{\1}', text)
-    # Inline code
-    text = re.sub(r'`(.+?)`', r'\\texttt{\1}', text)
-    # Block math
-    text = re.sub(r'\$\$(.+?)\$\$', r'\\[\1\\]', text, flags=re.DOTALL)
-    # Inline math
-    text = re.sub(r'\$(.+?)\$', r'$\1$', text)
-    # Escape bare % and & (common in academic content)
-    text = re.sub(r'(?<!\\)%', r'\\%', text)
-    text = re.sub(r'(?<!\\)&', r'\\&', text)
-    return text
-
-
-def _close_lists(latex_lines: list, in_itemize: bool, in_enumerate: bool):
-    if in_itemize:
-        latex_lines.append("\\end{itemize}")
-    if in_enumerate:
-        latex_lines.append("\\end{enumerate}")
-
-
-import json
-import json
-from pathlib import Path
-# Recommendation: Move this import to the top of your file
-# Adjust the path based on your specific 'sys.path'
-try:
-    from app.utils.helpers import sanitize_tex
-except ImportError:
-    # Fallback if the above path fails in your specific Docker/Local setup
-    from utils.helpers import sanitize_tex
+# ============================================================
+# NODE 6: PANDOC NODE — Template injection
+# ============================================================
 
 def pandoc_node(state: AgentState):
     markdown_content = state.get("markdown_content", "")
-    # Ensure selected_theme is parsed correctly
+ 
     try:
         theme = json.loads(state.get("selected_theme", "{}"))
     except (json.JSONDecodeError, TypeError):
         theme = {}
-
-    # 1. Extract metadata with sanitization
-    # If state keys are missing, these defaults prevent LaTeX "Undefined Control Sequence" errors
-    report_title = sanitize_tex(state.get("report_title", "Project Report"))
-    author_name = sanitize_tex(state.get("author_name", "Student Name"))
-    dept_name = sanitize_tex(state.get("department", "Engineering"))
-    college_name = sanitize_tex(state.get("college_short_name", "ICET"))
-
-    style_name = theme.get("name", "Academic Standard")
+ 
+    # ── Metadata ──────────────────────────────────────────────────
+    report_title  = sanitize_tex(state.get("report_title",       "Project Report"))
+    author_name   = sanitize_tex(state.get("author_name",        "Student Name"))
+    dept_name     = sanitize_tex(state.get("department",         "Computer Science Engineering"))
+    college_short = sanitize_tex(state.get("college_short_name", "ICET"))
+ 
+    # ── Abstract & References ─────────────────────────────────────
+    abstract_text  = state.get("abstract_content",   "")
+    references_tex = state.get("references_content", "")
+ 
+    if not abstract_text and "abstract" in markdown_content.lower():
+        abstract_text, markdown_content = _split_abstract(markdown_content)
+ 
+    style_name    = theme.get("name",              "Academic Standard")
     template_name = theme.get("tex_template_path", "college_report_v1.tex")
-
+ 
     print(f"[LaTeX Converter] Converting | Style: {style_name}")
-
-    # 2. Convert the main body using your lightweight converter
-    body_latex = _convert_markdown_to_latex(markdown_content)
-
-    # project_root should be defined globally or passed in
-    templates_dir = Path("templates") 
+ 
+    # ── Convert markdown → LaTeX ───────────────────────────────────
+    body_latex       = _convert_markdown_to_latex(markdown_content)
+    abstract_latex   = _convert_markdown_to_latex(abstract_text) if abstract_text else ""
+    references_latex = references_tex
+ 
+    # ── Load template & inject placeholders ───────────────────────
+    templates_dir      = Path("templates")
     full_template_path = templates_dir / template_name
-
+ 
     if full_template_path.exists():
         template_text = full_template_path.read_text()
-        
-        # 3. Create the replacement map
-        # Note: We prioritize {{CONTENT}}. If the LLM generates the Abstract 
-        # inside the content, we keep {{ABSTRACT}} empty.
+ 
         replacements = {
-            "{{TITLE}}": report_title,
-            "{{AUTHOR_NAMES}}": author_name,
-            "{{DEPARTMENT}}": dept_name,
-            "{{COLLEGE_SHORT_NAME}}": college_name,
-            "{{CONTENT}}": body_latex,
-            "{{ABSTRACT}}": "",  
-            "{{REFERENCES}}": ""
+            "%%TITLE%%":              report_title,
+            "%%AUTHOR_NAMES%%":       author_name,
+            "%%DEPARTMENT%%":         dept_name,
+            "%%COLLEGE_SHORT_NAME%%": college_short,
+            "%%ABSTRACT%%":           abstract_latex,
+            "%%CONTENT%%":            body_latex,
+            "%%REFERENCES%%":         references_latex,
         }
-
+ 
         latex_content = template_text
         for placeholder, value in replacements.items():
             latex_content = latex_content.replace(placeholder, str(value))
-            
+ 
         print(f"[LaTeX Converter] Injected into template: {full_template_path}")
+ 
     else:
-        print(f"[LaTeX Converter] Template not found at {full_template_path}. Using fallback.")
-        latex_content = _wrap_in_document(body_latex, style_name)
-
+        print(f"[LaTeX Converter] Template not found: {full_template_path}. Using fallback.")
+        latex_content = _wrap_in_document(body_latex, report_title)
+ 
+    # ── Clean & validate before returning ─────────────────────────
+    # NEW: one line — runs all 7 structural fixes automatically.
+    # This is the only addition to your existing pandoc_node logic.
+    latex_content = LaTeXCleaner().clean(latex_content)
+ 
     return {"document_content": latex_content}
+ 
 
-def _wrap_in_document(body: str, style_name: str) -> str:
-    return f"""\\documentclass[12pt]{{article}}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# HELPER: Split abstract from body if not already separated
+# ============================================================
+
+def _split_abstract(markdown: str):
+    """
+    If the markdown contains an Abstract heading, split it out.
+    Returns (abstract_text, remaining_body).
+    """
+    lines = markdown.split("\n")
+    abstract_lines = []
+    body_lines = []
+    in_abstract = False
+    abstract_done = False
+
+    for line in lines:
+        lower = line.strip().lower()
+
+        if not abstract_done and (lower in ("# abstract", "## abstract", "abstract—", "abstract-")):
+            in_abstract = True
+            continue  # skip the heading line itself
+
+        if in_abstract and not abstract_done:
+            # Stop abstract at next heading
+            if line.startswith("#"):
+                abstract_done = True
+                in_abstract = False
+                body_lines.append(line)
+            else:
+                abstract_lines.append(line)
+        else:
+            body_lines.append(line)
+
+    abstract_text = "\n".join(abstract_lines).strip()
+    body_text     = "\n".join(body_lines).strip()
+    return abstract_text, body_text
+
+
+# ============================================================
+# HELPER: Fallback document wrapper (used if template missing)
+# ============================================================
+
+def _wrap_in_document(body: str, title: str) -> str:
+    # FIX #7: Use mathptmx instead of \usepackage{times}
+    return f"""\\documentclass[12pt,a4paper]{{article}}
+\\usepackage[utf8]{{inputenc}}
+\\usepackage[T1]{{fontenc}}
+\\usepackage{{mathptmx}}
 \\usepackage{{amsmath}}
 \\usepackage{{geometry}}
-\\geometry{{margin=1in}}
-\\usepackage{{times}}
 \\usepackage{{enumitem}}
-\\title{{{style_name}}}
+\\usepackage{{listings}}
+\\usepackage{{xcolor}}
+\\geometry{{margin=2.5cm}}
+\\title{{{title}}}
 \\begin{{document}}
 \\maketitle
 {body}
 \\end{{document}}
 """
-
 # ============================================================
 # GRAPH WIRING
 # ============================================================
