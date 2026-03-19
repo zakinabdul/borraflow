@@ -10,7 +10,7 @@ function App() {
     <>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<AuthPage />} />
+          <Route path="/auth" element={<AuthPage />} />
           <Route path="/home" element={<HomePage />} />
           <Route path='/editor' element={<EditorPage />} />
         </Routes>
