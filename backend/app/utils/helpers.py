@@ -1,6 +1,9 @@
+# imports
+import re
+from pathlib import Path
+ 
+ 
 """Helper functions"""
-
-
 def format_response(data, message: str = None, success: bool = True): # type: ignore
     """Format API response"""
     return {
@@ -46,14 +49,6 @@ def sanitize_tex(text: str) -> str:
     return text
 
 
-
-
-
-
-import re
-from pathlib import Path
- 
- 
 class LaTeXCleaner:
     """
     Sanitize and structurally validate a LaTeX string before

@@ -3,7 +3,6 @@ from app.api.v1 import api_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.agents import groq_rate_limit_handler
 from groq import RateLimitError
-from contextlib import asynccontextmanager
 
 
 app = FastAPI()

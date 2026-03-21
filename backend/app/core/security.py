@@ -3,7 +3,6 @@ from firebase_admin import credentials, auth
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
-import json
 
 # Initialize Firebase app
 cred_dict = {

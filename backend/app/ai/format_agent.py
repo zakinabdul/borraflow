@@ -1,23 +1,24 @@
-from typing import TypedDict, Annotated, List
-from langgraph.graph import StateGraph, END, START
-from langgraph.constants import Send
-from langchain_groq import ChatGroq
-import json
-import re
-import subprocess
-import tempfile
 import os
+import re
+import json
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 from langsmith import traceable
-from langchain_core.messages import BaseMessage
-from langchain_core.prompts import ChatPromptTemplate
-from langgraph.graph.message import add_messages
-from langgraph.checkpoint.memory import InMemorySaver
+from langchain_groq import ChatGroq
+from langgraph.constants import Send
+from typing import TypedDict, Annotated, List
 from app.ai.template_store import StyleRetriever
-import uuid
-# After — add LaTeXCleaner to the same import
+from langgraph.graph.message import add_messages
+from langgraph.graph import StateGraph, END, START
+from langchain_core.prompts import ChatPromptTemplate
+from langgraph.checkpoint.memory import InMemorySaver
 from app.utils.helpers import sanitize_tex, LaTeXCleaner
+
+try:
+    from app.utils.helpers import sanitize_tex
+except ImportError:
+    from utils.helpers import sanitize_tex
 # --- ENV SETUP ---
 current_file_path = Path(__file__).resolve()
 project_root = current_file_path.parent.parent.parent
@@ -41,7 +42,6 @@ class ChunkState(TypedDict):
     """State for each individual chunk processed in parallel"""
     chunk: str        # The raw text chunk
     index: int        # Position in the original document
-from typing import TypedDict, Annotated, List
 class AgentState(TypedDict, total=False):
     """Main graph state"""
     user_request: str
@@ -90,7 +90,7 @@ markdown_generate = markdown_prompt | llm
 # ============================================================
 
 def chunker_node(state: AgentState):
-    raw_text = state["raw_text"]
+    raw_text = state.get("raw_text"," ")
     
     # Split by headings (lines starting with a number+dot or all-caps or markdown #)
     # This is a smart split — keeps sections together
@@ -132,18 +132,11 @@ def chunk_router(state: AgentState):
     """
     return [
         Send("markdown_format", {"chunk": chunk, "index": i})
-        for i, chunk in enumerate(state["chunks"])
+        for i, chunk in enumerate(state.get("chunks", []))
     ]
 
 
-import re
-import json
-from pathlib import Path
 
-try:
-    from app.utils.helpers import sanitize_tex
-except ImportError:
-    from utils.helpers import sanitize_tex
 
 
 # ============================================================
@@ -171,7 +164,9 @@ async def markdown_format_node(state: ChunkState):
 # ============================================================
 
 def reducer_node(state: AgentState):
-    chunks = state["markdown_chunks"]
+    chunks = state.get("markdown_chunks", [])
+    if not chunks:
+        return {"markdown_content": " "}
 
     sorted_chunks = sorted(chunks, key=lambda x: x["index"])
     full_markdown = "\n\n".join(c["content"] for c in sorted_chunks)
@@ -188,7 +183,7 @@ def reducer_node(state: AgentState):
 @traceable
 def style_retrieval_node(state: AgentState):
     retriever = StyleRetriever()
-    user_query = state["user_request"]
+    user_query = state.get("user_request", " ")
 
     theme_data = retriever.search_style(user_query)
 
